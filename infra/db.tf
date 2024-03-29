@@ -1,43 +1,26 @@
-# resource "digitalocean_database_cluster" "knights_path_db_cluster" {
-#   name         = "knights_path_db_cluster"
-#   region       = "nyc1"
-#   version      = "14"
-#   node_count   = 1
-#   size         = "db-s-1vcpu-2gb"
-#   engine       = "pg"
-# }
+resource "aws_secretsmanager_secret" "db_password" {
+  name = "db-password"
+  recovery_window_in_days = 0
+}
 
-# resource "digitalocean_database_firewall" "knights_path_db-fw" {
-#   cluster_id = digitalocean_database_cluster.knights_path_db_cluster.uuid
+resource "aws_secretsmanager_secret_version" "db_password_version" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = var.db_password
+}
 
-#   rule {
-#     type  = "app"
-#     # value = "192.168.1.1"
-#   }
-# }
+resource "aws_db_instance" "kp_pg_db" {
+  identifier           = "knights-path-pg-db"
+  allocated_storage    = 20
+  storage_type         = "gp2"
+  engine               = "postgres"
+  engine_version       = "16.1"
+  instance_class       = "db.t3.micro"
+  name                 = "kp_pg_db"
+  username             = "kp_user"
+  password             = aws_secretsmanager_secret_version.db_password_version.secret_string
+  parameter_group_name = "default.postgres16"
+  skip_final_snapshot  = true
+  db_subnet_group_name = aws_db_subnet_group.db_subnet.name
 
-# resource "digitalocean_database_db" "knights_path_db" {
-#   cluster_id = digitalocean_database_cluster.knights_path_db_cluster.id
-#   name       = "knights_path_db"
-# }
-
-# resource "digitalocean_database_user" "knights_path_user" {
-#   cluster_id = digitalocean_database_cluster.knights_path_db_cluster.id
-#   name       = "kp_user"
-# }
-
-# resource "digitalocean_database_cluster" "knights_path_redis_cluster" {
-#   name          = "knights_path_redis"
-#   region       = "nyc1"
-#   version      = "7"
-#   node_count   = 1
-#   size         = "s-1vcpu-1gb"
-#   engine       = "redis"
-# }
-
-# resource "digitalocean_database_redis_config" "knights_path_redis_config" {
-#   cluster_id             = digitalocean_database_cluster.knights_path_redis_cluster.id
-#   maxmemory_policy       = "allkeys-lru"
-#   notify_keyspace_events = "KEA"
-#   timeout                = 90
-# }
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+}
