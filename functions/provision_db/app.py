@@ -30,8 +30,7 @@ def lambda_handler(event, context):
         Column("message", String(100))
     )
     metadata_obj.create_all(engine)
-    # request.drop(engine)
-    # path.drop(engine)
+
     return {
         "statusCode": 200,
         "body": "Successly ran migration"
