@@ -1,66 +1,96 @@
 from sqlalchemy import create_engine, MetaData, Table, select, update
 import os
+import json
+import logging
 
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_HOST = os.getenv('DB_HOST')
 DB_DATABASE = os.getenv('DB_DATABASE')
 
-valid_files = ['A','B','C','D','E','F','G','H']
-valid_ranks = ['1','2','3','4','5','6','7','8']
+logger = logging.getLogger()
 
-chessboard = [({a},{b}) for a in valid_files for b in valid_ranks]
+square_dict = {a:'ABCDEFGH'[a - 1] for a in range(1,9)}
 
-class Edge:
-    def __init__(self, start, finish) -> None:
-        self.start = start,
-        self.finish = finish
+class KnightPath:
+    def __init__(self, path = [], length = 0):
+        self.path = path
+        self.length = length
+    
+    def get_description(self):
+        return ",".join([f"{square_dict[square[0]]},{square[1]}" for square in self.path])
+    
+    def create_new_paths(self, square_list):
+        return [KnightPath(self.path + [square], self.length + 1) for square in square_list]
+    
+    def get_next_squares(self):
+        x, y = self.path[-1]
+        return [(x+dx,y+dy)
+            for h,v   in [(1,2),(2,1)] 
+            for dx,dy in [(h,v),(h,-v),(-h,v),(-h,-v)]
+            if x+dx in range(1,9) and y+dy in range(1,9) ]
 
-class Path:
-    def __init__(self) -> None:
-        self.edges = []
-        self.length = 0
+def find_knights_path(source, target, engine, path_table, known_paths):
+    pass
 
-def check_valid_square(chess_square):
-    return (
-        len(str(chess_square)) == 2 
-        and str(chess_square)[0] in valid_files
-        and str(chess_square)[1] in valid_ranks
-    )
-
-# def find_knights_path(start, finish, paths):
-#     visited_squares = {start}
-
-
-
+def get_next_squares():
+        x, y = (5,5)
+        return ",".join([(x+dx,y+dy)
+            for h,v   in [(1,2),(2,1)] 
+            for dx,dy in [(h,v),(h,-v),(-h,v),(-h,-v)]
+            if x+dx in range(1,9) and y+dy in range(1,9) ])
 
 def lambda_handler(event, context):
-    query_params = event.get('queryStringParameters')
-    request_id = query_params.get('request_id') if query_params else event.get('request_id')
-    source = query_params.get('source') if query_params else event.get('source')
-    target = query_params.get('target') if query_params else event.get('target')
-
-    if not (request_id and source and target):
-        return {
+    for record in event.get('Records'):
+        message = json.loads(record.get('body'))    
+        if not message:
+            logger.error('Message empty')
+            return {
                 'statusCode': 422,
-                'body': 'Request must contain request, source, and target.'
+                'body': 'Message empty'
             }
+        request_id, source, target = message.get('request_id'), message.get('source'), message.get('target')
+        
+        engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}")
+        metadata = MetaData()
+        requests = Table('request', metadata, autoload_with=engine)
+        paths = Table('path', metadata, autoload_with=engine)
 
-    engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}")
-    metadata = MetaData()
-    requests = Table('request', metadata, autoload_with=engine)
+        with engine.connect() as conn:
+            update_query = (
+                update(requests)
+                .where(requests.c.request_id == request_id)
+                .values(status='IN PROGRESS')
+            )
+            conn.execute(update_query)
+            conn.commit()   
 
-    with engine.connect() as conn:
-        update_query = (
-            update(requests)
-            .where(requests.c.request_id == request_id)
-            .values(status='IN PROGRESS')
-        )
-        conn.execute(update_query)
-        conn.commit()
+            paths_query = select([paths.c['path_id']])
+            query_result = conn.execute(paths_query)
+            existing_paths = [row[0] for row in query_result]
 
-    
-    
+        if f'{source},{target}' in existing_paths:
+            with engine.connect() as conn:
+                update_query = (
+                    update(requests)
+                    .where(requests.c.request_id == request_id)
+                    .values(
+                        status='COMPLETE',
+                        path_id=f'{source},{target}'
+                        )
+                )
+                conn.execute(update_query)
+                conn.commit()   
+        else:
+            logger.exception(get_next_squares())
+            # result = find_knights_path(
+            #     source, 
+            #     target, 
+            #     engine, 
+            #     paths, 
+            #     existing_paths
+            #     )
+
     return {
         'statusCode': 200,
         'body': f"Request complete"

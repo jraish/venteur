@@ -1,17 +1,21 @@
 resource "aws_vpc" "knights_path_vpc" {
   cidr_block = "10.0.0.0/16"
+  enable_dns_support = true
+  enable_dns_hostnames = true
 }
 
 resource "aws_subnet" "lambda_subnet" {
   vpc_id            = aws_vpc.knights_path_vpc.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-2a"
+  availability_zone = "${var.aws_region}a"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_subnet" "lambda_subnet_2" {
   vpc_id            = aws_vpc.knights_path_vpc.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-2b"
+  availability_zone = "${var.aws_region}b"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_db_subnet_group" "db_subnet" {

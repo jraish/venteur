@@ -3,14 +3,18 @@ import os
 import uuid
 import boto3
 import json
+import logging
 
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_HOST = os.getenv('DB_HOST')
 DB_DATABASE = os.getenv('DB_DATABASE')
+SQS_NAME = os.getenv('SQS_NAME')
 
 valid_files = ['A','B','C','D','E','F','G','H']
 valid_ranks = ['1','2','3','4','5','6','7','8']
+
+logger = logging.getLogger()
 
 def check_valid_square(chess_square):
     return (
@@ -34,28 +38,25 @@ def lambda_handler(event, context):
                 'body': f'Request must include "source" and "target" valid chess squares. Source: {source}, target: {target}'
             }
     
+    request_id = str(uuid.uuid4())
+    sqs_client = boto3.client('sqs')
+
+    try:
+        sqs_client.send_message(
+            QueueUrl=SQS_NAME,
+            MessageBody=json.dumps({
+            'request_id': request_id,
+            'source': source,
+            'target': target
+            })
+        )
+    except Exception as e:
+        logger.exception(e)
+
     engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}")
     metadata = MetaData()
     requests = Table('request', metadata, autoload_with=engine)
-    request_id = str(uuid.uuid4())
-
-    lambda_client = boto3.client('lambda')
-
-    function_name = 'process_request_lambda'
-    payload = {
-        'request_id': request_id,
-        'source': source,
-        'target': target
-    }
-
-    response = lambda_client.invoke(
-        FunctionName=function_name,
-        InvocationType='Event',
-        Payload=json.dumps(payload)
-    )
-
-    response_payload = json.load(response['Payload'])
-
+    
     with engine.connect() as conn:
         trans = conn.begin()
 

@@ -3,7 +3,7 @@ resource "aws_lambda_function" "knightpath_lambda" {
   function_name  = "knightpath_lambda"
   role           = aws_iam_role.lambda_role.arn
   package_type   = "Image"
-  timeout        = 45
+  timeout        = 60
 
   vpc_config {
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -16,6 +16,7 @@ resource "aws_lambda_function" "knightpath_lambda" {
       DB_PASSWORD = aws_db_instance.kp_pg_db.password
       DB_HOST = aws_db_instance.kp_pg_db.endpoint
       DB_DATABASE = aws_db_instance.kp_pg_db.name
+      SQS_NAME  = aws_sqs_queue.process_request_queue.name
     }
   }
 }
@@ -157,8 +158,8 @@ resource "aws_iam_policy" "lambda_deploy_policy" {
   })
 }
 
-resource "aws_iam_policy" "lambda_invoke_policy" {
-  name        = "lambda_invoke_policy"
+resource "aws_iam_policy" "lambda_sqs_policy" {
+  name        = "lambda_sqs_policy"
   description = "IAM policy for Lambda functions to invoke other lambda"
   policy = jsonencode({
     Version = "2012-10-17"
@@ -166,9 +167,12 @@ resource "aws_iam_policy" "lambda_invoke_policy" {
       {
         Effect = "Allow"
         Action = [
-          "lambda:InvokeFunction"
+          "sqs:SendMessage",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
         ]
-        Resource = aws_lambda_function.process_request_lambda.arn
+        Resource = aws_sqs_queue.process_request_queue.arn
       }
     ]
   })
@@ -193,14 +197,6 @@ resource "aws_iam_policy" "lambda_log_policy" {
   })
 }
 
-resource "aws_lambda_permission" "invoke_permission" {
-  statement_id  = "AllowFunctionToInvokeAnotherFunction"
-  action        = "lambda:InvokeFunction"
-  source_arn = aws_lambda_function.knightpath_lambda.arn
-  principal     = "lambda.amazonaws.com"
-  function_name    = aws_lambda_function.process_request_lambda.function_name
-}
-
 resource "aws_iam_role_policy_attachment" "lambda_db_policy_attachment" {
   policy_arn = aws_iam_policy.lambda_db_policy.arn
   role       = aws_iam_role.lambda_role.name
@@ -211,8 +207,8 @@ resource "aws_iam_role_policy_attachment" "lambda_deploy_policy_attachment" {
   role       = aws_iam_role.lambda_role.name
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_invoke_policy_attachment" {
-  policy_arn = aws_iam_policy.lambda_invoke_policy.arn
+resource "aws_iam_role_policy_attachment" "lambda_sqs_policy_attachment" {
+  policy_arn = aws_iam_policy.lambda_sqs_policy.arn
   role       = aws_iam_role.lambda_role.name
 }
 
@@ -237,7 +233,12 @@ resource "aws_ecr_repository" "knightpath_result" {
   name = "knightpath_result"
 }
 
-resource "aws_cloudwatch_log_group" "lambda_log_group" {
+resource "aws_cloudwatch_log_group" "lambda_knightpath_log_group" {
   name              = "/aws/lambda/${aws_lambda_function.knightpath_lambda.function_name}"
   retention_in_days = 3
-  }
+}
+
+resource "aws_cloudwatch_log_group" "lambda_process_request_log_group" {
+  name              = "/aws/lambda/${aws_lambda_function.process_request_lambda.function_name}"
+  retention_in_days = 3
+}
