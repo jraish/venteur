@@ -71,5 +71,5 @@ def lambda_handler(event, context):
     
     return {
         'statusCode': 200,
-        'body': f"Request submitted! Operation ID: {request_id}"
+        'body': f"Request submitted! operationId: {request_id}"
     }   
